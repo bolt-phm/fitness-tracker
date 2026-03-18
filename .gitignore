@@ -1,2 +1,5 @@
 __pycache__/
 fitness_tracker.db
+.env
+.venv/
+*.env.local

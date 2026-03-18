@@ -106,3 +106,26 @@ python app.py --git-sync-update
 - GitHub 仓库拉取权限仍然由服务器本机的 Git 凭据负责，比如 SSH key 或 PAT
 - 建议服务器部署时使用 SSH key 连接 GitHub，这样自动更新时不需要人工输入密码
 - 如果希望“拉到新代码后立刻生效”，建议配合 `systemd` / `supervisor` / Docker 重启策略，或者启用 `FITNESS_ALLOW_SELF_RESTART=true`
+
+## Cloud Handoff Files
+
+For cloud deployment and cloud-agent handoff, also read:
+
+- `PROJECT_CONTEXT.md`
+- `AI_PROTOCOL.md`
+- `DEPLOYMENT.md`
+- `.env.example`
+- `OPENCLAW_PROMPT.md`
+
+## Read-Only Share API
+
+If you want an external assistant to read your current day safely, prefer the read-only share API instead of exposing admin routes:
+
+- `GET /api/share/context?date=YYYY-MM-DD&token=<FITNESS_SHARE_TOKEN>`
+
+This endpoint is designed for safe external reading of:
+
+- current daily record
+- profile summary
+- recent stats
+- AI export text and payload

@@ -163,6 +163,14 @@ def sync_settings() -> dict[str, Any]:
     }
 
 
+def share_settings() -> dict[str, Any]:
+    share_token = os.environ.get("FITNESS_SHARE_TOKEN", "").strip()
+    return {
+        "shareTokenConfigured": bool(share_token),
+        "shareToken": share_token,
+    }
+
+
 def run_git_command(args: list[str], timeout: int = 30, check: bool = True) -> str:
     completed = subprocess.run(
         ["git", *args],
@@ -1251,6 +1259,20 @@ def build_bootstrap(conn: sqlite3.Connection, selected_date: str) -> dict[str, A
     }
 
 
+def build_share_context(conn: sqlite3.Connection, selected_date: str) -> dict[str, Any]:
+    parse_iso_date(selected_date)
+    record = fetch_record(conn, selected_date)
+    exchange = export_exchange_block(conn, record)
+    start_date = (date.fromisoformat(selected_date) - timedelta(days=6)).isoformat()
+    return {
+        "selectedDate": selected_date,
+        "profile": serialize_profile(conn),
+        "record": record,
+        "recentStats": fetch_stats(conn, start_date, selected_date),
+        "exchange": exchange,
+    }
+
+
 def auto_sync_loop() -> None:
     settings = sync_settings()
     if not settings["autoSyncEnabled"]:
@@ -1293,12 +1315,28 @@ class FitnessRequestHandler(SimpleHTTPRequestHandler):
             return authorization.removeprefix("Bearer ").strip()
         return self.headers.get("X-Admin-Token", "").strip()
 
+    def request_share_token(self, query: dict[str, list[str]]) -> str:
+        token = query.get("token", [""])[0].strip()
+        if token:
+            return token
+        authorization = self.headers.get("Authorization", "")
+        if authorization.startswith("Bearer "):
+            return authorization.removeprefix("Bearer ").strip()
+        return self.headers.get("X-Share-Token", "").strip()
+
     def require_admin_auth(self) -> None:
         settings = sync_settings()
         if not settings["adminTokenConfigured"]:
             raise AuthError("FITNESS_ADMIN_TOKEN is not configured on this server.")
         if self.request_admin_token() != settings["adminToken"]:
             raise AuthError("Invalid admin token.")
+
+    def require_share_auth(self, query: dict[str, list[str]]) -> None:
+        settings = share_settings()
+        if not settings["shareTokenConfigured"]:
+            raise AuthError("FITNESS_SHARE_TOKEN is not configured on this server.")
+        if self.request_share_token(query) != settings["shareToken"]:
+            raise AuthError("Invalid share token.")
 
     def handle_api_error(self, exc: Exception) -> None:
         status = 400
@@ -1408,6 +1446,14 @@ class FitnessRequestHandler(SimpleHTTPRequestHandler):
                         save=bool(payload.get("save")),
                     )
                     self.send_json({"ok": True, "data": import_result})
+                    return
+
+                if method == "GET" and path == "/api/share/context":
+                    self.require_share_auth(query)
+                    selected_date = parse_iso_date(
+                        query.get("date", [date.today().isoformat()])[0]
+                    )
+                    self.send_json({"ok": True, "data": build_share_context(conn, selected_date)})
                     return
 
                 if method == "GET" and path == "/api/admin/git/status":
