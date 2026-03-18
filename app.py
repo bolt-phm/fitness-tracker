@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sqlite3
+import subprocess
+import sys
+import threading
+import time
 from datetime import date, datetime, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -23,6 +28,7 @@ MEAL_LABELS = {
 TRACKER_VERSION = "FITNESS_TRACKER_V1"
 TRACKER_BEGIN = f"{TRACKER_VERSION}_BEGIN"
 TRACKER_END = f"{TRACKER_VERSION}_END"
+GIT_SYNC_DEFAULT_REMOTE = "origin"
 
 DEFAULT_PROFILE = {
     "heightM": 1.71,
@@ -120,6 +126,176 @@ def get_connection() -> sqlite3.Connection:
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     return connection
+
+
+class AuthError(Exception):
+    pass
+
+
+class SyncError(Exception):
+    pass
+
+
+def env_flag(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def sync_settings() -> dict[str, Any]:
+    admin_token = os.environ.get("FITNESS_ADMIN_TOKEN", "").strip()
+    branch = os.environ.get("FITNESS_GIT_BRANCH", "").strip()
+    if not branch:
+        branch = current_git_branch(fallback="master")
+    return {
+        "adminTokenConfigured": bool(admin_token),
+        "adminToken": admin_token,
+        "remote": os.environ.get("FITNESS_GIT_REMOTE", GIT_SYNC_DEFAULT_REMOTE).strip() or GIT_SYNC_DEFAULT_REMOTE,
+        "branch": branch,
+        "allowSelfUpdate": env_flag("FITNESS_ALLOW_SELF_UPDATE", default=True),
+        "allowSelfRestart": env_flag("FITNESS_ALLOW_SELF_RESTART", default=False),
+        "autoSyncEnabled": env_flag("FITNESS_AUTO_SYNC_ENABLED", default=False),
+        "autoSyncIntervalSeconds": max(int(os.environ.get("FITNESS_AUTO_SYNC_INTERVAL_SECONDS", "300")), 30),
+        "autoSyncApply": env_flag("FITNESS_AUTO_SYNC_APPLY", default=False),
+        "autoSyncRestart": env_flag("FITNESS_AUTO_SYNC_RESTART", default=False),
+        "fetchTimeoutSeconds": max(int(os.environ.get("FITNESS_GIT_FETCH_TIMEOUT_SECONDS", "30")), 5),
+    }
+
+
+def run_git_command(args: list[str], timeout: int = 30, check: bool = True) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=ROOT_DIR,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+        check=False,
+    )
+    stdout = completed.stdout.strip()
+    stderr = completed.stderr.strip()
+    if check and completed.returncode != 0:
+        message = stderr or stdout or f"git {' '.join(args)} failed"
+        raise SyncError(message)
+    return stdout
+
+
+def current_git_branch(fallback: str = "") -> str:
+    branch = run_git_command(["branch", "--show-current"], check=False)
+    return branch or fallback
+
+
+def current_git_commit() -> str:
+    return run_git_command(["rev-parse", "HEAD"], check=False) or ""
+
+
+def git_remote_url(remote: str) -> str:
+    return run_git_command(["remote", "get-url", remote], check=False)
+
+
+def git_is_dirty() -> bool:
+    return bool(run_git_command(["status", "--porcelain"], check=False))
+
+
+def git_fetch(remote: str, branch: str, timeout: int = 30) -> None:
+    run_git_command(["fetch", remote, branch, "--prune"], timeout=timeout, check=True)
+
+
+def git_ahead_behind(remote_ref: str) -> tuple[int, int]:
+    output = run_git_command(["rev-list", "--left-right", "--count", f"HEAD...{remote_ref}"], check=False)
+    if not output:
+        return 0, 0
+    ahead_str, behind_str = output.split()
+    return int(ahead_str), int(behind_str)
+
+
+def git_commit_subject(ref_name: str) -> str:
+    return run_git_command(["log", "-1", "--pretty=%s", ref_name], check=False)
+
+
+def git_sync_status(refresh_remote: bool = False) -> dict[str, Any]:
+    settings = sync_settings()
+    remote = settings["remote"]
+    branch = settings["branch"]
+    remote_ref = f"{remote}/{branch}"
+    remote_url = git_remote_url(remote)
+    fetch_error = ""
+
+    if refresh_remote:
+        try:
+            git_fetch(remote, branch, timeout=settings["fetchTimeoutSeconds"])
+        except Exception as exc:  # noqa: BLE001
+            fetch_error = str(exc)
+
+    remote_commit = run_git_command(["rev-parse", remote_ref], check=False)
+    ahead, behind = git_ahead_behind(remote_ref) if remote_commit else (0, 0)
+    local_commit = current_git_commit()
+
+    return {
+        "repoAvailable": (ROOT_DIR / ".git").exists(),
+        "remote": remote,
+        "remoteUrl": remote_url,
+        "branch": branch,
+        "localCommit": local_commit,
+        "localSubject": git_commit_subject("HEAD") if local_commit else "",
+        "remoteCommit": remote_commit,
+        "remoteSubject": git_commit_subject(remote_ref) if remote_commit else "",
+        "dirty": git_is_dirty(),
+        "ahead": ahead,
+        "behind": behind,
+        "updateAvailable": behind > 0,
+        "canFastForward": behind > 0 and ahead == 0,
+        "fetchError": fetch_error,
+        "checkedAt": current_timestamp(),
+    }
+
+
+def trigger_process_restart(delay_seconds: float = 1.0) -> None:
+    def _restart() -> None:
+        time.sleep(delay_seconds)
+        os.execv(sys.executable, [sys.executable, *sys.argv])
+
+    thread = threading.Thread(target=_restart, daemon=True)
+    thread.start()
+
+
+def apply_git_update(restart_after_update: bool = False) -> dict[str, Any]:
+    settings = sync_settings()
+    if not settings["allowSelfUpdate"]:
+        raise SyncError("Self-update is disabled on this server.")
+
+    status = git_sync_status(refresh_remote=True)
+    if status["fetchError"]:
+        raise SyncError(status["fetchError"])
+    if not status["repoAvailable"]:
+        raise SyncError("Current deployment is not a git repository.")
+    if status["dirty"]:
+        raise SyncError("Working tree is dirty. Refusing to update automatically.")
+    if not status["updateAvailable"]:
+        return {
+            "updated": False,
+            "restarted": False,
+            "status": status,
+            "message": "Already up to date.",
+        }
+    if not status["canFastForward"]:
+        raise SyncError("Cannot auto-update because local branch is not fast-forward only.")
+
+    remote_ref = f"{settings['remote']}/{settings['branch']}"
+    run_git_command(["merge", "--ff-only", remote_ref], timeout=settings["fetchTimeoutSeconds"], check=True)
+    new_status = git_sync_status(refresh_remote=False)
+    restarted = restart_after_update and settings["allowSelfRestart"]
+    if restarted:
+        trigger_process_restart()
+
+    return {
+        "updated": True,
+        "restarted": restarted,
+        "status": new_status,
+        "message": "Update applied successfully.",
+    }
 
 
 def initialize_database() -> None:
@@ -1075,6 +1251,22 @@ def build_bootstrap(conn: sqlite3.Connection, selected_date: str) -> dict[str, A
     }
 
 
+def auto_sync_loop() -> None:
+    settings = sync_settings()
+    if not settings["autoSyncEnabled"]:
+        return
+
+    while True:
+        try:
+            if settings["autoSyncApply"]:
+                apply_git_update(restart_after_update=settings["autoSyncRestart"])
+            else:
+                git_sync_status(refresh_remote=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[auto-sync] {exc}")
+        time.sleep(settings["autoSyncIntervalSeconds"])
+
+
 class FitnessRequestHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
@@ -1095,9 +1287,28 @@ class FitnessRequestHandler(SimpleHTTPRequestHandler):
         raw_body = self.rfile.read(length).decode("utf-8") if length else "{}"
         return json.loads(raw_body or "{}")
 
+    def request_admin_token(self) -> str:
+        authorization = self.headers.get("Authorization", "")
+        if authorization.startswith("Bearer "):
+            return authorization.removeprefix("Bearer ").strip()
+        return self.headers.get("X-Admin-Token", "").strip()
+
+    def require_admin_auth(self) -> None:
+        settings = sync_settings()
+        if not settings["adminTokenConfigured"]:
+            raise AuthError("FITNESS_ADMIN_TOKEN is not configured on this server.")
+        if self.request_admin_token() != settings["adminToken"]:
+            raise AuthError("Invalid admin token.")
+
     def handle_api_error(self, exc: Exception) -> None:
         status = 400
-        if isinstance(exc, sqlite3.IntegrityError):
+        if isinstance(exc, AuthError):
+            status = 401
+            message = str(exc) or "Unauthorized."
+        elif isinstance(exc, SyncError):
+            status = 409
+            message = str(exc) or "Sync failed."
+        elif isinstance(exc, sqlite3.IntegrityError):
             message = "数据保存失败，可能是名称重复或该运动项目已经被历史记录使用。"
         else:
             message = str(exc) or "请求失败。"
@@ -1199,6 +1410,43 @@ class FitnessRequestHandler(SimpleHTTPRequestHandler):
                     self.send_json({"ok": True, "data": import_result})
                     return
 
+                if method == "GET" and path == "/api/admin/git/status":
+                    self.require_admin_auth()
+                    refresh_remote = query.get("refresh", ["0"])[0] in {"1", "true", "yes"}
+                    settings = sync_settings()
+                    status_payload = git_sync_status(refresh_remote=refresh_remote)
+                    self.send_json(
+                        {
+                            "ok": True,
+                            "data": {
+                                "status": status_payload,
+                                "settings": {
+                                    "remote": settings["remote"],
+                                    "branch": settings["branch"],
+                                    "allowSelfUpdate": settings["allowSelfUpdate"],
+                                    "allowSelfRestart": settings["allowSelfRestart"],
+                                    "autoSyncEnabled": settings["autoSyncEnabled"],
+                                    "autoSyncApply": settings["autoSyncApply"],
+                                    "autoSyncRestart": settings["autoSyncRestart"],
+                                    "autoSyncIntervalSeconds": settings["autoSyncIntervalSeconds"],
+                                },
+                            },
+                        }
+                    )
+                    return
+
+                if method == "POST" and path == "/api/admin/git/update":
+                    self.require_admin_auth()
+                    payload = self.read_json_body()
+                    restart_after_update = bool(payload.get("restart"))
+                    self.send_json(
+                        {
+                            "ok": True,
+                            "data": apply_git_update(restart_after_update=restart_after_update),
+                        }
+                    )
+                    return
+
                 if path.startswith("/api/records/"):
                     record_date = path.split("/")[-1]
                     if method == "GET":
@@ -1235,6 +1483,26 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="只初始化数据库，不启动服务",
     )
+    parser.add_argument(
+        "--git-sync-status",
+        action="store_true",
+        help="打印当前本地版本与远端版本的对比状态",
+    )
+    parser.add_argument(
+        "--git-sync-update",
+        action="store_true",
+        help="执行一次 fast-forward 更新",
+    )
+    parser.add_argument(
+        "--refresh-remote",
+        action="store_true",
+        help="查询版本状态时先 fetch 远端",
+    )
+    parser.add_argument(
+        "--restart-after-update",
+        action="store_true",
+        help="命令行更新成功后自动重启当前进程",
+    )
     return parser.parse_args()
 
 
@@ -1245,7 +1513,24 @@ def main() -> None:
         print(f"Database initialized at {DB_PATH}")
         return
 
+    if args.git_sync_status:
+        print(json.dumps(git_sync_status(refresh_remote=args.refresh_remote), ensure_ascii=False, indent=2))
+        return
+
+    if args.git_sync_update:
+        print(
+            json.dumps(
+                apply_git_update(restart_after_update=args.restart_after_update),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
     server = ThreadingHTTPServer((args.host, args.port), FitnessRequestHandler)
+    settings = sync_settings()
+    if settings["autoSyncEnabled"]:
+        threading.Thread(target=auto_sync_loop, daemon=True).start()
     print(f"Fitness tracker running at http://{args.host}:{args.port}")
     try:
         server.serve_forever()
