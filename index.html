@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>健身记录与体重追踪</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="app-shell">
+        <header class="hero panel">
+            <div>
+                <p class="eyebrow">Gym Cut Tracker</p>
+                <h1>健身记录与体重追踪</h1>
+                <p class="hero-copy">
+                    记录每天的体重、饮食和训练，让我们后续能基于真实数据分析你的减脂进度。
+                </p>
+            </div>
+            <div class="hero-metrics">
+                <div class="metric-card">
+                    <span>当前体重</span>
+                    <strong id="hero-current-weight">--</strong>
+                </div>
+                <div class="metric-card">
+                    <span>BMI</span>
+                    <strong id="hero-bmi">--</strong>
+                </div>
+                <div class="metric-card">
+                    <span>距目标还差</span>
+                    <strong id="hero-remaining-weight">--</strong>
+                </div>
+                <div class="metric-card warning">
+                    <span>目标节奏</span>
+                    <strong id="hero-weekly-rate">--</strong>
+                </div>
+            </div>
+        </header>
+
+        <nav class="page-tabs">
+            <button class="tab-button active" data-page-target="entry">每日录入</button>
+            <button class="tab-button" data-page-target="stats">统计查询</button>
+        </nav>
+
+        <main>
+            <section class="page active" id="page-entry">
+                <div class="entry-layout">
+                    <article class="panel profile-panel">
+                        <div class="section-heading">
+                            <div>
+                                <p class="section-kicker">目标设定</p>
+                                <h2>减脂目标卡</h2>
+                            </div>
+                        </div>
+                        <form id="profile-form" class="profile-grid">
+                            <label>
+                                <span>身高 (m)</span>
+                                <input id="profile-height" type="number" min="1" step="0.01" required>
+                            </label>
+                            <label>
+                                <span>起始体重 (kg)</span>
+                                <input id="profile-start-weight" type="number" min="1" step="0.1" required>
+                            </label>
+                            <label>
+                                <span>目标体重 (kg)</span>
+                                <input id="profile-target-weight" type="number" min="1" step="0.1">
+                            </label>
+                            <label>
+                                <span>目标周期 (天)</span>
+                                <input id="profile-goal-days" type="number" min="1" step="1">
+                            </label>
+                            <label>
+                                <span>开始日期</span>
+                                <input id="profile-start-date" type="date" required>
+                            </label>
+                            <label class="full-span">
+                                <span>计划备注</span>
+                                <textarea id="profile-notes" rows="3" placeholder="例如：每周训练 6 天，保持高蛋白饮食。"></textarea>
+                            </label>
+                            <div class="form-actions full-span">
+                                <button type="submit">保存目标设置</button>
+                            </div>
+                        </form>
+                        <div id="goal-alert" class="goal-alert"></div>
+                    </article>
+
+                    <article class="panel daily-panel">
+                        <div class="section-heading">
+                            <div>
+                                <p class="section-kicker">Daily Log</p>
+                                <h2>当天记录</h2>
+                            </div>
+                            <div class="toolbar">
+                                <input id="record-date" type="date">
+                                <button id="load-date-btn" type="button" class="ghost">读取当天</button>
+                                <button id="open-import-btn" type="button" class="ghost">粘贴导入</button>
+                                <button id="copy-summary-btn" type="button" class="ghost">复制今日摘要</button>
+                                <button id="delete-day-btn" type="button" class="ghost danger">删除当天</button>
+                            </div>
+                        </div>
+
+                        <form id="record-form">
+                            <div class="record-grid">
+                                <label>
+                                    <span>今日体重 (kg)</span>
+                                    <input id="record-weight" type="number" min="1" step="0.1">
+                                </label>
+                                <label>
+                                    <span>摄入热量 (kcal)</span>
+                                    <input id="record-intake" type="number" min="0" step="1">
+                                </label>
+                                <label>
+                                    <span>额外热量消耗 (kcal)</span>
+                                    <input id="record-extra-burn" type="number" min="0" step="1">
+                                </label>
+                                <label>
+                                    <span>步数</span>
+                                    <input id="record-steps" type="number" min="0" step="1">
+                                </label>
+                                <label>
+                                    <span>睡眠 (小时)</span>
+                                    <input id="record-sleep" type="number" min="0" step="0.1">
+                                </label>
+                                <label>
+                                    <span>饮水量 (ml)</span>
+                                    <input id="record-water" type="number" min="0" step="50">
+                                </label>
+                                <label class="full-span">
+                                    <span>当天备注</span>
+                                    <textarea id="record-note" rows="3" placeholder="例如：状态一般、腿部疲劳、晚餐有加餐。"></textarea>
+                                </label>
+                            </div>
+
+                            <div class="section-heading compact">
+                                <div>
+                                    <p class="section-kicker">Meal Plan</p>
+                                    <h3>三餐规划与实际</h3>
+                                </div>
+                            </div>
+                            <div class="meals-grid">
+                                <article class="meal-card">
+                                    <h4>早餐</h4>
+                                    <textarea id="meal-breakfast-plan" rows="2" placeholder="计划吃什么"></textarea>
+                                    <textarea id="meal-breakfast-actual" rows="2" placeholder="实际吃了什么"></textarea>
+                                    <input id="meal-breakfast-calories" type="number" min="0" step="1" placeholder="热量 kcal">
+                                </article>
+                                <article class="meal-card">
+                                    <h4>午餐</h4>
+                                    <textarea id="meal-lunch-plan" rows="2" placeholder="计划吃什么"></textarea>
+                                    <textarea id="meal-lunch-actual" rows="2" placeholder="实际吃了什么"></textarea>
+                                    <input id="meal-lunch-calories" type="number" min="0" step="1" placeholder="热量 kcal">
+                                </article>
+                                <article class="meal-card">
+                                    <h4>晚餐</h4>
+                                    <textarea id="meal-dinner-plan" rows="2" placeholder="计划吃什么"></textarea>
+                                    <textarea id="meal-dinner-actual" rows="2" placeholder="实际吃了什么"></textarea>
+                                    <input id="meal-dinner-calories" type="number" min="0" step="1" placeholder="热量 kcal">
+                                </article>
+                            </div>
+
+                            <div class="section-heading compact">
+                                <div>
+                                    <p class="section-kicker">Workout Sessions</p>
+                                    <h3>运动明细</h3>
+                                </div>
+                                <button id="new-entry-btn" type="button">新增运动记录</button>
+                            </div>
+                            <div id="exercise-list" class="exercise-list empty-state">
+                                还没有添加运动记录。
+                            </div>
+
+                            <div class="form-actions">
+                                <button type="submit">保存当天记录</button>
+                            </div>
+                        </form>
+                    </article>
+                </div>
+
+                <article class="panel template-panel">
+                    <div class="section-heading">
+                        <div>
+                            <p class="section-kicker">Template Builder</p>
+                            <h2>运动项目模板</h2>
+                        </div>
+                        <button id="new-template-btn" type="button">新增模板</button>
+                    </div>
+                    <p class="muted">
+                        每个模板都可以配置自己的参数。比如“慢走”可以有坡度、速度，“力量训练”可以有组数、次数、重量。
+                    </p>
+                    <div id="template-list" class="template-grid"></div>
+                </article>
+            </section>
+
+            <section class="page" id="page-stats">
+                <article class="panel">
+                    <div class="section-heading">
+                        <div>
+                            <p class="section-kicker">Insights</p>
+                            <h2>统计与查询</h2>
+                        </div>
+                        <div class="toolbar">
+                            <button class="ghost quick-range" data-days="7" type="button">近 7 天</button>
+                            <button class="ghost quick-range" data-days="30" type="button">近 30 天</button>
+                        </div>
+                    </div>
+
+                    <div class="stats-filters">
+                        <label>
+                            <span>开始日期</span>
+                            <input id="stats-start" type="date">
+                        </label>
+                        <label>
+                            <span>结束日期</span>
+                            <input id="stats-end" type="date">
+                        </label>
+                        <label>
+                            <span>查询指标</span>
+                            <select id="metric-select">
+                                <option value="weightKg">体重</option>
+                                <option value="intakeCalories">摄入热量</option>
+                                <option value="extraBurnCalories">额外热量消耗</option>
+                                <option value="exerciseMinutes">运动时长</option>
+                                <option value="exerciseCalories">运动消耗热量</option>
+                                <option value="stepCount">步数</option>
+                                <option value="sleepHours">睡眠时长</option>
+                                <option value="hydrationMl">饮水量</option>
+                                <option value="netCalories">净热量</option>
+                            </select>
+                        </label>
+                        <div class="form-actions">
+                            <button id="load-stats-btn" type="button">刷新统计</button>
+                        </div>
+                    </div>
+
+                    <div id="stats-summary" class="summary-grid"></div>
+
+                    <div class="chart-panel">
+                        <div class="chart-header">
+                            <h3 id="chart-title">趋势图</h3>
+                            <span id="chart-caption" class="muted"></span>
+                        </div>
+                        <svg id="stats-chart" viewBox="0 0 960 320" role="img" aria-label="趋势图"></svg>
+                        <div id="chart-empty" class="empty-state hidden">这个时间段还没有可展示的数据。</div>
+                    </div>
+
+                    <div class="stats-layout">
+                        <div class="sub-panel">
+                            <h3>运动项目占比</h3>
+                            <div id="exercise-breakdown" class="table-wrap"></div>
+                        </div>
+                        <div class="sub-panel">
+                            <h3>每日汇总</h3>
+                            <div id="stats-table" class="table-wrap"></div>
+                        </div>
+                    </div>
+                </article>
+            </section>
+        </main>
+    </div>
+
+    <dialog id="template-dialog" class="dialog-card">
+        <form id="template-form" method="dialog">
+            <div class="dialog-header">
+                <h3 id="template-dialog-title">新增模板</h3>
+                <button type="button" class="icon-button" data-close-dialog="template-dialog">×</button>
+            </div>
+            <label>
+                <span>模板名称</span>
+                <input id="template-name" type="text" required>
+            </label>
+            <label>
+                <span>模板说明</span>
+                <textarea id="template-description" rows="3" placeholder="例如：适合恢复日，强度不要太高。"></textarea>
+            </label>
+            <div class="section-heading compact">
+                <h4>自定义参数</h4>
+                <button id="add-field-btn" type="button" class="ghost">新增参数</button>
+            </div>
+            <div id="template-fields" class="field-list"></div>
+            <div class="dialog-actions">
+                <button type="button" class="ghost" data-close-dialog="template-dialog">取消</button>
+                <button type="submit">保存模板</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="entry-dialog" class="dialog-card">
+        <form id="entry-form" method="dialog">
+            <div class="dialog-header">
+                <h3 id="entry-dialog-title">新增运动记录</h3>
+                <button type="button" class="icon-button" data-close-dialog="entry-dialog">×</button>
+            </div>
+            <label>
+                <span>运动类型</span>
+                <select id="entry-type" required></select>
+            </label>
+            <div class="record-grid compact-grid">
+                <label>
+                    <span>时长 (分钟)</span>
+                    <input id="entry-duration" type="number" min="0" step="1">
+                </label>
+                <label>
+                    <span>消耗热量 (kcal)</span>
+                    <input id="entry-calories" type="number" min="0" step="1">
+                </label>
+                <label>
+                    <span>强度</span>
+                    <input id="entry-intensity" type="text" placeholder="低 / 中 / 高">
+                </label>
+            </div>
+            <label>
+                <span>备注</span>
+                <textarea id="entry-note" rows="2" placeholder="例如：腿部训练后做 20 分钟收尾有氧。"></textarea>
+            </label>
+            <div class="section-heading compact">
+                <h4>模板参数</h4>
+            </div>
+            <div id="entry-custom-fields" class="field-list"></div>
+            <div class="dialog-actions">
+                <button type="button" class="ghost" data-close-dialog="entry-dialog">取消</button>
+                <button type="submit">保存运动记录</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="import-dialog" class="dialog-card">
+        <form id="import-form" method="dialog">
+            <div class="dialog-header">
+                <h3>粘贴标准格式数据</h3>
+                <button type="button" class="icon-button" data-close-dialog="import-dialog">×</button>
+            </div>
+            <p class="muted">
+                支持直接粘贴 `FITNESS_TRACKER_V1_BEGIN` 到 `FITNESS_TRACKER_V1_END` 之间的标准 JSON 数据块。
+                导入后会自动填充到页面，但不会立刻保存，你确认无误后再点“保存当天记录”即可。
+            </p>
+            <label>
+                <span>粘贴内容</span>
+                <textarea id="import-text" rows="16" placeholder="把标准格式整段粘贴到这里"></textarea>
+            </label>
+            <div class="dialog-actions">
+                <button type="button" class="ghost" data-close-dialog="import-dialog">取消</button>
+                <button type="submit">解析并填充</button>
+            </div>
+        </form>
+    </dialog>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/app.js" defer></script>
+</body>
+</html>
