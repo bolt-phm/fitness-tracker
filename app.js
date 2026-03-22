@@ -31,14 +31,21 @@ function element(id) {
     return document.getElementById(id);
 }
 
+function formatDateInputValue(dateValue) {
+    const year = dateValue.getFullYear();
+    const month = String(dateValue.getMonth() + 1).padStart(2, "0");
+    const day = String(dateValue.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
 function currentDateString() {
-    return new Date().toISOString().slice(0, 10);
+    return formatDateInputValue(new Date());
 }
 
 function shiftDate(base, deltaDays) {
     const dateValue = new Date(`${base}T00:00:00`);
     dateValue.setDate(dateValue.getDate() + deltaDays);
-    return dateValue.toISOString().slice(0, 10);
+    return formatDateInputValue(dateValue);
 }
 
 function initializeDates() {
@@ -67,24 +74,8 @@ function createEmptyRecord(dateValue) {
     };
 }
 
-function toNumber(value) {
-    if (value === "" || value === null || value === undefined) {
-        return null;
-    }
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-}
-
 function safeText(value) {
     return value ?? "";
-}
-
-function formatMetric(value, unit = "") {
-    if (value === null || value === undefined || value === "") {
-        return "--";
-    }
-    const displayValue = Number.isFinite(value) ? Number(value).toFixed(Number.isInteger(value) ? 0 : 1) : value;
-    return `${displayValue}${unit ? ` ${unit}` : ""}`;
 }
 
 function escapeHtml(value) {
@@ -94,6 +85,127 @@ function escapeHtml(value) {
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
+}
+
+function toNumber(value) {
+    if (value === "" || value === null || value === undefined) {
+        return null;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatMetric(value, unit = "") {
+    if (value === null || value === undefined || value === "") {
+        return "--";
+    }
+    const numberValue = Number(value);
+    const display = Number.isFinite(numberValue)
+        ? numberValue.toFixed(Number.isInteger(numberValue) ? 0 : 1)
+        : value;
+    return `${display}${unit ? ` ${unit}` : ""}`;
+}
+
+function formatSignedMetric(value, unit = "") {
+    if (value === null || value === undefined || value === "") {
+        return "--";
+    }
+    const numberValue = Number(value);
+    if (!Number.isFinite(numberValue)) {
+        return String(value);
+    }
+    const sign = numberValue > 0 ? "+" : "";
+    return `${sign}${numberValue.toFixed(Number.isInteger(numberValue) ? 0 : 1)}${unit ? ` ${unit}` : ""}`;
+}
+
+function formatDateLabel(value) {
+    if (!value) {
+        return "--";
+    }
+    const dateValue = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(dateValue.getTime())) {
+        return value;
+    }
+    return `${dateValue.getMonth() + 1}月${dateValue.getDate()}日`;
+}
+
+function previewText(value, fallback = "待补充") {
+    const text = safeText(value).replace(/\s+/g, " ").trim();
+    if (!text) {
+        return fallback;
+    }
+    return text.length <= 38 ? text : `${text.slice(0, 38)}…`;
+}
+
+function calculateMealTotal(record) {
+    return mealTypes.reduce((sum, mealType) => {
+        const calories = Number(record.meals?.[mealType]?.calories);
+        return Number.isFinite(calories) ? sum + calories : sum;
+    }, 0);
+}
+
+function calculateExerciseTotals(entries = []) {
+    return entries.reduce(
+        (totals, entry) => {
+            const minutes = Number(entry.durationMinutes);
+            const calories = Number(entry.caloriesBurned);
+            if (Number.isFinite(minutes)) {
+                totals.minutes += minutes;
+            }
+            if (Number.isFinite(calories)) {
+                totals.calories += calories;
+            }
+            totals.sessions += 1;
+            return totals;
+        },
+        { minutes: 0, calories: 0, sessions: 0 }
+    );
+}
+
+function parseEveningSegments(text) {
+    const result = { pre: "", post: "" };
+    const lines = safeText(text)
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    if (!lines.length) {
+        return result;
+    }
+
+    const leftovers = [];
+    for (const line of lines) {
+        const normalized = line.replace(/^[-•\d.\s]+/, "");
+        let match;
+        if ((match = normalized.match(/^(练前加餐|练前餐|训练前加餐|训练前)[:：]?\s*(.*)$/))) {
+            result.pre = [result.pre, match[2]].filter(Boolean).join("\n").trim();
+            continue;
+        }
+        if ((match = normalized.match(/^(练后晚餐|练后餐|训练后晚餐|训练后)[:：]?\s*(.*)$/))) {
+            result.post = [result.post, match[2]].filter(Boolean).join("\n").trim();
+            continue;
+        }
+        leftovers.push(line);
+    }
+
+    if (leftovers.length) {
+        result.post = [result.post, leftovers.join("\n")].filter(Boolean).join("\n").trim();
+    }
+
+    return result;
+}
+
+function composeEveningSegments(preText, postText) {
+    const lines = [];
+    const pre = safeText(preText).trim();
+    const post = safeText(postText).trim();
+    if (pre) {
+        lines.push(`练前加餐：${pre}`);
+    }
+    if (post) {
+        lines.push(`练后晚餐：${post}`);
+    }
+    return lines.join("\n");
 }
 
 async function apiFetch(path, options = {}) {
@@ -121,7 +233,7 @@ function showToast(message) {
     state.toastTimer = window.setTimeout(() => {
         toast.classList.remove("show");
         window.setTimeout(() => toast.classList.add("hidden"), 180);
-    }, 2400);
+    }, 2600);
 }
 
 function bindEvents() {
@@ -135,11 +247,16 @@ function bindEvents() {
 
     element("profile-form").addEventListener("submit", handleProfileSubmit);
     element("record-form").addEventListener("submit", handleRecordSubmit);
+    element("record-form").addEventListener("input", refreshEntrySummary);
+    element("record-form").addEventListener("change", refreshEntrySummary);
+
     element("load-date-btn").addEventListener("click", () => loadRecord(element("record-date").value));
     element("open-import-btn").addEventListener("click", () => element("import-dialog").showModal());
     element("delete-day-btn").addEventListener("click", handleRecordDelete);
     element("copy-summary-btn").addEventListener("click", copyTodaySummary);
     element("import-form").addEventListener("submit", handleImportSubmit);
+    element("sync-intake-btn").addEventListener("click", syncMealCaloriesToIntake);
+    element("sync-extra-burn-btn").addEventListener("click", syncExerciseCaloriesToBurn);
 
     element("new-template-btn").addEventListener("click", () => openTemplateDialog());
     element("add-field-btn").addEventListener("click", () => appendTemplateFieldRow());
@@ -152,7 +269,7 @@ function bindEvents() {
     element("exercise-list").addEventListener("click", handleExerciseListClick);
 
     element("load-stats-btn").addEventListener("click", loadStats);
-    element("metric-select").addEventListener("change", () => renderStats());
+    element("metric-select").addEventListener("change", renderStats);
     document.querySelectorAll(".quick-range").forEach((button) => {
         button.addEventListener("click", () => {
             const end = currentDateString();
@@ -196,8 +313,7 @@ async function loadRecord(dateValue) {
     }
 
     try {
-        const record = await apiFetch(`/api/records/${dateValue}`);
-        state.record = record;
+        state.record = await apiFetch(`/api/records/${dateValue}`);
         renderRecord();
         showToast(`已读取 ${dateValue} 的记录。`);
     } catch (error) {
@@ -223,8 +339,12 @@ function renderProfile() {
     element("hero-remaining-weight").textContent = formatMetric(summary.remainingWeight, "kg");
     element("hero-weekly-rate").textContent = formatMetric(summary.weeklyRate, "kg/周");
 
+    element("hero-warning-list").innerHTML = (summary.warnings || []).length
+        ? summary.warnings.map((item) => `<div class="warning-pill">${escapeHtml(item)}</div>`).join("")
+        : `<div class="warning-pill safe">当前目标节奏处于可跟踪状态。</div>`;
+
     const goalAlert = element("goal-alert");
-    if (summary.warnings && summary.warnings.length) {
+    if ((summary.warnings || []).length) {
         goalAlert.innerHTML = summary.warnings.map((item) => `<p>${escapeHtml(item)}</p>`).join("");
     } else {
         goalAlert.innerHTML = `
@@ -235,10 +355,11 @@ function renderProfile() {
 }
 
 function renderRecord() {
-    const record = state.record || createEmptyRecord(element("record-date").value || currentDateString());
-    state.record = record;
+    const dateValue = element("record-date").value || currentDateString();
+    state.record = state.record || createEmptyRecord(dateValue);
 
-    element("record-date").value = record.date;
+    const record = state.record;
+    element("record-date").value = record.date || dateValue;
     element("record-weight").value = record.weightKg ?? "";
     element("record-intake").value = record.intakeCalories ?? "";
     element("record-extra-burn").value = record.extraBurnCalories ?? "";
@@ -247,20 +368,33 @@ function renderRecord() {
     element("record-water").value = record.hydrationMl ?? "";
     element("record-note").value = safeText(record.note);
 
-    mealTypes.forEach((mealType) => {
-        const meal = record.meals?.[mealType] || {};
-        element(`meal-${mealType}-plan`).value = safeText(meal.planText);
-        element(`meal-${mealType}-actual`).value = safeText(meal.actualText);
-        element(`meal-${mealType}-calories`).value = meal.calories ?? "";
-    });
+    const breakfast = record.meals?.breakfast || {};
+    const lunch = record.meals?.lunch || {};
+    const dinner = record.meals?.dinner || {};
+    const dinnerPlan = parseEveningSegments(dinner.planText);
+    const dinnerActual = parseEveningSegments(dinner.actualText);
+
+    element("meal-breakfast-plan").value = safeText(breakfast.planText);
+    element("meal-breakfast-actual").value = safeText(breakfast.actualText);
+    element("meal-breakfast-calories").value = breakfast.calories ?? "";
+
+    element("meal-lunch-plan").value = safeText(lunch.planText);
+    element("meal-lunch-actual").value = safeText(lunch.actualText);
+    element("meal-lunch-calories").value = lunch.calories ?? "";
+
+    element("meal-dinner-pre-plan").value = safeText(dinnerPlan.pre);
+    element("meal-dinner-post-plan").value = safeText(dinnerPlan.post);
+    element("meal-dinner-pre-actual").value = safeText(dinnerActual.pre);
+    element("meal-dinner-post-actual").value = safeText(dinnerActual.post);
+    element("meal-dinner-calories").value = dinner.calories ?? "";
 
     renderExerciseEntries();
+    refreshEntrySummary();
 }
 
 function gatherRecordFromForm() {
-    const dateValue = element("record-date").value || currentDateString();
     return {
-        date: dateValue,
+        date: element("record-date").value || currentDateString(),
         weightKg: toNumber(element("record-weight").value),
         intakeCalories: toNumber(element("record-intake").value),
         extraBurnCalories: toNumber(element("record-extra-burn").value),
@@ -280,13 +414,136 @@ function gatherRecordFromForm() {
                 calories: toNumber(element("meal-lunch-calories").value),
             },
             dinner: {
-                planText: safeText(element("meal-dinner-plan").value),
-                actualText: safeText(element("meal-dinner-actual").value),
+                planText: composeEveningSegments(
+                    element("meal-dinner-pre-plan").value,
+                    element("meal-dinner-post-plan").value
+                ),
+                actualText: composeEveningSegments(
+                    element("meal-dinner-pre-actual").value,
+                    element("meal-dinner-post-actual").value
+                ),
                 calories: toNumber(element("meal-dinner-calories").value),
             },
         },
         exerciseEntries: [...(state.record?.exerciseEntries || [])],
     };
+}
+
+function refreshEntrySummary() {
+    const draft = gatherRecordFromForm();
+    const mealTotal = calculateMealTotal(draft);
+    const exerciseTotals = calculateExerciseTotals(draft.exerciseEntries);
+    const intake = draft.intakeCalories;
+    const extraBurn = draft.extraBurnCalories;
+
+    element("entry-summary-weight").textContent = formatMetric(draft.weightKg, "kg");
+    element("entry-summary-meals").textContent = mealTotal ? formatMetric(mealTotal, "kcal") : "--";
+    element("entry-summary-intake").textContent = formatMetric(intake, "kcal");
+    element("entry-summary-training").textContent = exerciseTotals.sessions
+        ? `${exerciseTotals.sessions} 项 / ${formatMetric(exerciseTotals.minutes, "分钟")}`
+        : "--";
+    element("entry-summary-burn").textContent = formatMetric(extraBurn, "kcal");
+    element("entry-summary-net").textContent = formatSignedMetric(
+        intake !== null && extraBurn !== null ? intake - extraBurn : null,
+        "kcal"
+    );
+
+    renderSyncHints(draft, mealTotal, exerciseTotals);
+    renderDayTimeline(draft, exerciseTotals);
+}
+
+function renderSyncHints(record, mealTotal, exerciseTotals) {
+    const hints = [];
+    const intake = record.intakeCalories;
+    const extraBurn = record.extraBurnCalories;
+
+    if (mealTotal && intake !== null && Math.abs(mealTotal - intake) >= 40) {
+        hints.push(`三餐热量合计 ${mealTotal} kcal，与“今日摄入”相差 ${Math.abs(mealTotal - intake)} kcal。`);
+    }
+    if (exerciseTotals.calories && extraBurn !== null && Math.abs(Math.round(exerciseTotals.calories) - extraBurn) >= 40) {
+        hints.push(`训练明细合计消耗 ${Math.round(exerciseTotals.calories)} kcal，与“额外消耗”相差 ${Math.abs(Math.round(exerciseTotals.calories) - extraBurn)} kcal。`);
+    }
+    if (!record.weightKg) {
+        hints.push("今天体重还没填，空腹体重最好尽量补上。");
+    }
+    if (record.sleepHours !== null && record.sleepHours < 7) {
+        hints.push("睡眠低于 7 小时，第二天训练强度要慎重上调。");
+    }
+    if (!hints.length) {
+        hints.push("记录结构已经对齐，可以继续补训练细节和实际餐次。");
+    }
+
+    element("entry-sync-hints").innerHTML = hints
+        .map((item) => `<div class="status-item">${escapeHtml(item)}</div>`)
+        .join("");
+}
+
+function renderDayTimeline(record, exerciseTotals) {
+    const dinnerPlan = parseEveningSegments(record.meals?.dinner?.planText);
+    const dinnerActual = parseEveningSegments(record.meals?.dinner?.actualText);
+    const trainingNames = (record.exerciseEntries || [])
+        .map((entry) => entry.exerciseTypeName || findExerciseType(entry.exerciseTypeId)?.name)
+        .filter(Boolean)
+        .join(" / ");
+
+    const items = [
+        {
+            label: "早餐",
+            phase: "早间启动",
+            text: previewText(record.meals?.breakfast?.actualText || record.meals?.breakfast?.planText),
+        },
+        {
+            label: "午餐",
+            phase: "白天主餐",
+            text: previewText(record.meals?.lunch?.actualText || record.meals?.lunch?.planText),
+        },
+        {
+            label: "练前",
+            phase: "傍晚补能",
+            text: previewText(dinnerActual.pre || dinnerPlan.pre, "待安排练前加餐"),
+        },
+        {
+            label: "训练",
+            phase: exerciseTotals.sessions ? `${exerciseTotals.sessions} 项 / ${Math.round(exerciseTotals.minutes)} 分钟` : "待安排",
+            text: previewText(trainingNames, "还没有训练条目"),
+        },
+        {
+            label: "练后",
+            phase: "夜间恢复",
+            text: previewText(dinnerActual.post || dinnerPlan.post, "待安排练后晚餐"),
+        },
+    ];
+
+    element("day-timeline").innerHTML = items
+        .map(
+            (item) => `
+                <div class="timeline-item">
+                    <div class="timeline-dot"></div>
+                    <div class="timeline-copy">
+                        <div class="timeline-head">
+                            <strong>${escapeHtml(item.label)}</strong>
+                            <span>${escapeHtml(item.phase)}</span>
+                        </div>
+                        <p>${escapeHtml(item.text)}</p>
+                    </div>
+                </div>
+            `
+        )
+        .join("");
+}
+
+function syncMealCaloriesToIntake() {
+    const total = calculateMealTotal(gatherRecordFromForm());
+    element("record-intake").value = total || "";
+    refreshEntrySummary();
+    showToast(total ? `已按餐次热量回填 ${total} kcal。` : "三餐热量还没填完整。");
+}
+
+function syncExerciseCaloriesToBurn() {
+    const totals = calculateExerciseTotals(state.record?.exerciseEntries || []);
+    element("record-extra-burn").value = totals.calories ? Math.round(totals.calories) : "";
+    refreshEntrySummary();
+    showToast(totals.calories ? `已按训练明细回填 ${Math.round(totals.calories)} kcal。` : "还没有训练明细可回填。");
 }
 
 async function handleProfileSubmit(event) {
@@ -335,14 +592,14 @@ async function handleRecordDelete() {
         showToast("请先选择日期。");
         return;
     }
+
     const confirmed = window.confirm(`确定删除 ${dateValue} 的记录吗？`);
     if (!confirmed) {
         return;
     }
+
     try {
-        state.record = await apiFetch(`/api/records/${dateValue}`, {
-            method: "DELETE",
-        });
+        state.record = await apiFetch(`/api/records/${dateValue}`, { method: "DELETE" });
         renderRecord();
         state.profile = await apiFetch("/api/profile");
         renderProfile();
@@ -365,11 +622,10 @@ async function handleImportSubmit(event) {
             }),
         });
         state.record = result.record;
-        setPage("entry");
         renderRecord();
+        setPage("entry");
         closeDialog("import-dialog");
-
-        if (result.skippedTypes.length) {
+        if (result.skippedTypes?.length) {
             showToast(`已填充数据，但有未匹配模板被跳过：${result.skippedTypes.join("、")}`);
             return;
         }
@@ -379,17 +635,23 @@ async function handleImportSubmit(event) {
     }
 }
 
+function findExerciseType(typeId) {
+    return state.exerciseTypes.find((item) => item.id === Number(typeId));
+}
+
 function renderTemplates() {
     const container = element("template-list");
     if (!state.exerciseTypes.length) {
-        container.innerHTML = `<div class="empty-state">还没有模板，先新增一个运动项目吧。</div>`;
+        container.innerHTML = `<div class="empty-state">还没有运动模板，先新增一个吧。</div>`;
         return;
     }
 
     container.innerHTML = state.exerciseTypes
         .map((template) => {
-            const fields = template.fields.length
-                ? template.fields.map((field) => `<span class="pill">${escapeHtml(field.label)} ${escapeHtml(field.unit || "")}</span>`).join("")
+            const fields = template.fields?.length
+                ? template.fields
+                    .map((field) => `<span class="pill">${escapeHtml(field.label)} ${escapeHtml(field.unit || "")}</span>`)
+                    .join("")
                 : `<span class="pill">无额外参数</span>`;
 
             return `
@@ -470,20 +732,18 @@ function appendTemplateFieldRow(field = {}) {
             <span>默认值</span>
             <input type="text" data-field-role="defaultValue" value="${escapeHtml(field.defaultValue || "")}">
         </label>
-        <div class="toolbar">
-            <label>
-                <span>必填</span>
-                <select data-field-role="required">
-                    <option value="false" ${field.required ? "" : "selected"}>否</option>
-                    <option value="true" ${field.required ? "selected" : ""}>是</option>
-                </select>
-            </label>
-            <button type="button" class="ghost danger" data-remove-field="true">删掉</button>
+        <label>
+            <span>必填</span>
+            <select data-field-role="required">
+                <option value="false" ${field.required ? "" : "selected"}>否</option>
+                <option value="true" ${field.required ? "selected" : ""}>是</option>
+            </select>
+        </label>
+        <div class="field-actions">
+            <button type="button" class="ghost danger" data-remove-field="true">删除</button>
         </div>
     `;
-    wrapper.querySelector("[data-remove-field='true']").addEventListener("click", () => {
-        wrapper.remove();
-    });
+    wrapper.querySelector("[data-remove-field='true']").addEventListener("click", () => wrapper.remove());
     container.appendChild(wrapper);
 }
 
@@ -536,6 +796,7 @@ async function handleTemplateDelete(templateId) {
     if (!template) {
         return;
     }
+
     const confirmed = window.confirm(`确定删除模板“${template.name}”吗？`);
     if (!confirmed) {
         return;
@@ -564,17 +825,20 @@ function renderExerciseEntries() {
     container.className = "exercise-list";
     container.innerHTML = entries
         .map((entry, index) => {
+            const typeName = findExerciseType(entry.exerciseTypeId)?.name || entry.exerciseTypeName || "未命名项目";
             const values = entry.values?.length
-                ? entry.values.map((value) => `<span class="pill">${escapeHtml(value.label)}: ${escapeHtml(value.valueText)} ${escapeHtml(value.unit || "")}</span>`).join("")
+                ? entry.values
+                    .map((value) => `<span class="pill">${escapeHtml(value.label)}：${escapeHtml(value.valueText)} ${escapeHtml(value.unit || "")}</span>`)
+                    .join("")
                 : `<span class="pill">无额外参数</span>`;
 
             return `
                 <article class="entry-card">
                     <header>
                         <div>
-                            <h4>${escapeHtml(findExerciseType(entry.exerciseTypeId)?.name || entry.exerciseTypeName || "未命名项目")}</h4>
+                            <h4>${escapeHtml(typeName)}</h4>
                             <p class="muted">
-                                时长 ${formatMetric(entry.durationMinutes, "分钟")} / 消耗 ${formatMetric(entry.caloriesBurned, "kcal")} / 强度 ${escapeHtml(entry.intensity || "未填")}
+                                ${formatMetric(entry.durationMinutes, "分钟")} / ${formatMetric(entry.caloriesBurned, "kcal")} / 强度 ${escapeHtml(entry.intensity || "未填")}
                             </p>
                         </div>
                         <div class="toolbar">
@@ -593,10 +857,7 @@ function renderExerciseEntries() {
 function handleExerciseListClick(event) {
     const action = event.target.dataset.entryAction;
     const entryIndex = Number(event.target.dataset.entryIndex);
-    if (!action && action !== "") {
-        return;
-    }
-    if (Number.isNaN(entryIndex)) {
+    if (!action || Number.isNaN(entryIndex)) {
         return;
     }
 
@@ -608,12 +869,9 @@ function handleExerciseListClick(event) {
     if (action === "delete") {
         state.record.exerciseEntries.splice(entryIndex, 1);
         renderExerciseEntries();
+        refreshEntrySummary();
         showToast("运动记录已移除。");
     }
-}
-
-function findExerciseType(typeId) {
-    return state.exerciseTypes.find((item) => item.id === Number(typeId));
 }
 
 function openEntryDialog(entryIndex = null) {
@@ -638,7 +896,10 @@ function openEntryDialog(entryIndex = null) {
     element("entry-note").value = entry?.note ?? "";
 
     const existingValueMap = Object.fromEntries(
-        (entry?.values || []).map((value) => [value.fieldKey || value.label, value.valueText])
+        (entry?.values || []).flatMap((value) => [
+            [value.fieldKey || value.label, value.valueText],
+            [value.label, value.valueText],
+        ])
     );
     renderEntryCustomFields(selectedTypeId, existingValueMap);
     element("entry-dialog").showModal();
@@ -647,7 +908,7 @@ function openEntryDialog(entryIndex = null) {
 function renderEntryCustomFields(typeId, existingValueMap = {}) {
     const container = element("entry-custom-fields");
     const exerciseType = findExerciseType(typeId);
-    if (!exerciseType || !exerciseType.fields.length) {
+    if (!exerciseType || !exerciseType.fields?.length) {
         container.innerHTML = `<div class="empty-state">这个模板没有额外参数。</div>`;
         return;
     }
@@ -656,17 +917,17 @@ function renderEntryCustomFields(typeId, existingValueMap = {}) {
     exerciseType.fields.forEach((field) => {
         const row = document.createElement("div");
         row.className = "field-row compact";
-        const value = existingValueMap[field.fieldKey] ?? existingValueMap[field.label] ?? field.defaultValue ?? "";
+        const currentValue = existingValueMap[field.fieldKey] ?? existingValueMap[field.label] ?? field.defaultValue ?? "";
         const inputType = field.fieldType === "text" ? "text" : "number";
         row.innerHTML = `
             <label>
-                <span>${escapeHtml(field.label)} ${field.unit ? `(${escapeHtml(field.unit)})` : ""}</span>
+                <span>${escapeHtml(field.label)}${field.unit ? ` (${escapeHtml(field.unit)})` : ""}</span>
                 <input
                     type="${inputType}"
                     data-entry-field-key="${escapeHtml(field.fieldKey)}"
                     data-entry-field-label="${escapeHtml(field.label)}"
                     data-entry-field-unit="${escapeHtml(field.unit || "")}"
-                    value="${escapeHtml(value)}"
+                    value="${escapeHtml(currentValue)}"
                     ${field.required ? "required" : ""}
                 >
             </label>
@@ -678,15 +939,14 @@ function renderEntryCustomFields(typeId, existingValueMap = {}) {
 function collectEntryPayload() {
     const exerciseTypeId = Number(element("entry-type").value);
     const exerciseType = findExerciseType(exerciseTypeId);
-    const valueInputs = [...element("entry-custom-fields").querySelectorAll("[data-entry-field-key]")];
-    const values = valueInputs
+    const values = [...element("entry-custom-fields").querySelectorAll("[data-entry-field-key]")]
         .map((input) => ({
             fieldKey: input.dataset.entryFieldKey,
             label: input.dataset.entryFieldLabel,
             unit: input.dataset.entryFieldUnit,
             valueText: input.value.trim(),
         }))
-        .filter((value) => value.valueText);
+        .filter((item) => item.valueText);
 
     return {
         exerciseTypeId,
@@ -707,10 +967,7 @@ function handleEntrySubmit(event) {
         return;
     }
 
-    if (!state.record) {
-        state.record = createEmptyRecord(element("record-date").value || currentDateString());
-    }
-
+    state.record = state.record || createEmptyRecord(element("record-date").value || currentDateString());
     if (Number.isInteger(state.editingEntryIndex)) {
         state.record.exerciseEntries[state.editingEntryIndex] = payload;
     } else {
@@ -718,6 +975,7 @@ function handleEntrySubmit(event) {
     }
 
     renderExerciseEntries();
+    refreshEntrySummary();
     closeDialog("entry-dialog");
     showToast("运动记录已更新。");
 }
@@ -743,7 +1001,6 @@ function renderStats() {
     if (!state.stats) {
         return;
     }
-
     renderSummaryCards();
     renderBreakdownTable();
     renderStatsTable();
@@ -756,15 +1013,15 @@ function renderSummaryCards() {
         ["已记录天数", formatMetric(summary.daysLogged, "天")],
         ["平均体重", formatMetric(summary.averageWeight, "kg")],
         ["体重变化", formatMetric(summary.weightChange, "kg")],
-        ["总运动时长", formatMetric(summary.totalExerciseMinutes, "分钟")],
-        ["总运动消耗", formatMetric(summary.totalExerciseCalories, "kcal")],
-        ["总训练次数", formatMetric(summary.totalSessions, "次")],
+        ["总摄入热量", formatMetric(summary.totalIntakeCalories, "kcal")],
+        ["总额外消耗", formatMetric(summary.totalExtraBurnCalories, "kcal")],
+        ["总训练时长", formatMetric(summary.totalExerciseMinutes, "分钟")],
     ];
 
     element("stats-summary").innerHTML = cards
         .map(
             ([label, value]) => `
-                <div class="metric-card">
+                <div class="metric-card compact">
                     <span>${escapeHtml(label)}</span>
                     <strong>${escapeHtml(value)}</strong>
                 </div>
@@ -777,7 +1034,7 @@ function renderBreakdownTable() {
     const container = element("exercise-breakdown");
     const items = state.stats.exerciseBreakdown || [];
     if (!items.length) {
-        container.innerHTML = `<div class="empty-state">这段时间还没有运动记录。</div>`;
+        container.innerHTML = `<div class="empty-state">这个时间段还没有运动记录。</div>`;
         return;
     }
 
@@ -813,7 +1070,7 @@ function renderStatsTable() {
     const container = element("stats-table");
     const rows = state.stats.series || [];
     if (!rows.length) {
-        container.innerHTML = `<div class="empty-state">这个时段还没有可查询的数据。</div>`;
+        container.innerHTML = `<div class="empty-state">这个时间段还没有可查询的数据。</div>`;
         return;
     }
 
@@ -823,9 +1080,9 @@ function renderStatsTable() {
                 <tr>
                     <th>日期</th>
                     <th>体重</th>
-                    <th>摄入热量</th>
-                    <th>运动时长</th>
-                    <th>运动消耗</th>
+                    <th>摄入</th>
+                    <th>训练时长</th>
+                    <th>训练消耗</th>
                     <th>步数</th>
                     <th>睡眠</th>
                     <th>饮水</th>
@@ -836,7 +1093,7 @@ function renderStatsTable() {
                     .map(
                         (row) => `
                             <tr>
-                                <td>${row.date}</td>
+                                <td>${escapeHtml(formatDateLabel(row.date))}</td>
                                 <td>${formatMetric(row.weightKg, "kg")}</td>
                                 <td>${formatMetric(row.intakeCalories, "kcal")}</td>
                                 <td>${formatMetric(row.exerciseMinutes, "分钟")}</td>
@@ -865,6 +1122,7 @@ function renderChart() {
 
     const svg = element("stats-chart");
     const emptyState = element("chart-empty");
+
     if (!points.length) {
         svg.innerHTML = "";
         emptyState.classList.remove("hidden");
@@ -872,9 +1130,10 @@ function renderChart() {
     }
 
     emptyState.classList.add("hidden");
+
     const width = 960;
     const height = 320;
-    const padding = { top: 24, right: 40, bottom: 44, left: 58 };
+    const padding = { top: 24, right: 40, bottom: 48, left: 64 };
     const plotWidth = width - padding.left - padding.right;
     const plotHeight = height - padding.top - padding.bottom;
     const values = points.map((point) => point.value);
@@ -888,22 +1147,25 @@ function renderChart() {
         return { ...point, x, y };
     });
 
-    const pathData = pointList.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+    const pathData = pointList
+        .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
+        .join(" ");
+
     const gridLines = [0, 0.25, 0.5, 0.75, 1]
         .map((ratio) => {
             const y = padding.top + plotHeight * ratio;
-            const value = (max - range * ratio).toFixed(1);
+            const labelValue = (max - range * ratio).toFixed(1);
             return `
-                <line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" stroke="rgba(32,104,79,0.12)" />
-                <text x="8" y="${y + 4}" fill="#5f6f62" font-size="12">${value}</text>
+                <line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" stroke="rgba(31, 85, 63, 0.12)" />
+                <text x="12" y="${y + 4}" fill="#607061" font-size="12">${labelValue}</text>
             `;
         })
         .join("");
 
-    const labels = pointList
+    const xLabels = pointList
         .map(
             (point) => `
-                <text x="${point.x}" y="${height - 14}" text-anchor="middle" fill="#5f6f62" font-size="12">
+                <text x="${point.x}" y="${height - 16}" text-anchor="middle" fill="#607061" font-size="12">
                     ${point.date.slice(5)}
                 </text>
             `
@@ -913,8 +1175,8 @@ function renderChart() {
     const dots = pointList
         .map(
             (point) => `
-                <circle cx="${point.x}" cy="${point.y}" r="5" fill="#1f6a50" />
-                <text x="${point.x}" y="${point.y - 12}" text-anchor="middle" fill="#1f2d20" font-size="12">
+                <circle cx="${point.x}" cy="${point.y}" r="5" fill="#1f5c46"></circle>
+                <text x="${point.x}" y="${point.y - 12}" text-anchor="middle" fill="#183626" font-size="12">
                     ${point.value}
                 </text>
             `
@@ -924,50 +1186,41 @@ function renderChart() {
     svg.innerHTML = `
         <defs>
             <linearGradient id="chart-line" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#1b5c45" />
-                <stop offset="100%" stop-color="#2f9170" />
+                <stop offset="0%" stop-color="#184e3a" />
+                <stop offset="100%" stop-color="#2f8b66" />
             </linearGradient>
         </defs>
         ${gridLines}
-        <path d="${pathData}" fill="none" stroke="url(#chart-line)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="${pathData}" fill="none" stroke="url(#chart-line)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></path>
         ${dots}
-        ${labels}
+        ${xLabels}
     `;
 }
 
 async function copyTodaySummary() {
-    let result;
+    let exportResult = null;
     try {
-        result = await apiFetch("/api/exchange/export", {
+        exportResult = await apiFetch("/api/exchange/export", {
             method: "POST",
             body: JSON.stringify({
                 record: gatherRecordFromForm(),
             }),
         });
-        await navigator.clipboard.writeText(result.text);
-        showToast("今日摘要已复制，你可以直接发给我。");
+        await navigator.clipboard.writeText(exportResult.text);
+        showToast("今日摘要已复制，你可以直接发给我分析。");
     } catch (error) {
         try {
-            if (!result) {
-                result = await apiFetch("/api/exchange/export", {
+            if (!exportResult) {
+                exportResult = await apiFetch("/api/exchange/export", {
                     method: "POST",
                     body: JSON.stringify({
                         record: gatherRecordFromForm(),
                     }),
                 });
             }
-            await navigator.clipboard.writeText(result.text);
-            showToast("今日摘要已复制，你可以直接发给我。");
+            window.prompt("复制下面这段内容发给我：", exportResult.text);
         } catch (fallbackError) {
-            if (!result) {
-                result = await apiFetch("/api/exchange/export", {
-                    method: "POST",
-                    body: JSON.stringify({
-                        record: gatherRecordFromForm(),
-                    }),
-                });
-            }
-            window.prompt("复制下面这段内容发给我：", result.text);
+            showToast(fallbackError.message);
         }
     }
 }
