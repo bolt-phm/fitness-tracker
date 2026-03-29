@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, urlparse
 ROOT_DIR = Path(__file__).resolve().parent
 STATIC_DIR = ROOT_DIR
 DB_PATH = ROOT_DIR / "fitness_tracker.db"
+LOCAL_STORE_DIR = ROOT_DIR / "daily_store"
 MEAL_TYPES = ("breakfast", "lunch", "dinner")
 MEAL_LABELS = {
     "breakfast": "早餐",
@@ -235,6 +236,31 @@ def share_settings() -> dict[str, Any]:
         "shareTokenConfigured": bool(share_token),
         "shareToken": share_token,
     }
+
+
+def ensure_local_store_dir() -> None:
+    LOCAL_STORE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def local_record_store_path(record_date: str) -> Path:
+    parse_iso_date(record_date)
+    return LOCAL_STORE_DIR / f"{record_date}.json"
+
+
+def latest_store_path() -> Path:
+    return LOCAL_STORE_DIR / "latest.json"
+
+
+def latest_record_date(conn: sqlite3.Connection) -> str | None:
+    row = conn.execute(
+        """
+        SELECT record_date
+        FROM daily_records
+        ORDER BY record_date DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    return row["record_date"] if row else None
 
 
 def run_git_command(args: list[str], timeout: int = 30, check: bool = True) -> str:
@@ -999,12 +1025,25 @@ def save_record(conn: sqlite3.Connection, record_date: str, payload: dict[str, A
                 ),
             )
 
-    return fetch_record(conn, record_date)
+    saved_record = fetch_record(conn, record_date)
+    try:
+        write_local_record_bundle(conn, record_date, saved_record)
+        refresh_latest_store_file(conn)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[local-store] failed to write {record_date}: {exc}")
+    return saved_record
 
 
 def delete_record(conn: sqlite3.Connection, record_date: str) -> None:
     parse_iso_date(record_date)
     conn.execute("DELETE FROM daily_records WHERE record_date = ?", (record_date,))
+    try:
+        record_path = local_record_store_path(record_date)
+        if record_path.exists():
+            record_path.unlink()
+        refresh_latest_store_file(conn)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[local-store] failed to cleanup {record_date}: {exc}")
 
 
 def fetch_stats(conn: sqlite3.Connection, start_date: str, end_date: str) -> dict[str, Any]:
@@ -1462,6 +1501,83 @@ def build_share_context(conn: sqlite3.Connection, selected_date: str) -> dict[st
     }
 
 
+def build_share_url_templates(record_date: str) -> dict[str, str]:
+    parse_iso_date(record_date)
+    public_base_url = as_text(os.environ.get("FITNESS_PUBLIC_BASE_URL")).rstrip("/")
+    token_placeholder = "{FITNESS_SHARE_TOKEN}"
+    dated_path = f"/api/share/context?date={record_date}&token={token_placeholder}"
+    latest_path = f"/api/share/context?token={token_placeholder}"
+    return {
+        "datedPathTemplate": dated_path,
+        "latestPathTemplate": latest_path,
+        "datedUrlTemplate": f"{public_base_url}{dated_path}" if public_base_url else dated_path,
+        "latestUrlTemplate": f"{public_base_url}{latest_path}" if public_base_url else latest_path,
+    }
+
+
+def build_local_record_bundle(
+    conn: sqlite3.Connection,
+    record_date: str,
+    record: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    parse_iso_date(record_date)
+    actual_record = record if isinstance(record, dict) else fetch_record(conn, record_date)
+    seven_days_before = (date.fromisoformat(record_date) - timedelta(days=6)).isoformat()
+    stats = fetch_stats(conn, seven_days_before, record_date)
+    exchange = export_exchange_block(conn, actual_record)
+    return {
+        "version": TRACKER_VERSION,
+        "generatedAt": current_timestamp(),
+        "date": record_date,
+        "record": actual_record,
+        "recentStatsSummary": stats.get("summary", {}),
+        "shareContext": build_share_url_templates(record_date),
+        "exchange": {
+            "beginMarker": exchange.get("beginMarker"),
+            "endMarker": exchange.get("endMarker"),
+            "targetDate": exchange.get("targetDate"),
+            "payload": exchange.get("payload"),
+        },
+    }
+
+
+def write_local_record_bundle(
+    conn: sqlite3.Connection,
+    record_date: str,
+    record: dict[str, Any] | None = None,
+) -> None:
+    ensure_local_store_dir()
+    bundle = build_local_record_bundle(conn, record_date, record)
+    record_path = local_record_store_path(record_date)
+    record_path.write_text(
+        json.dumps(bundle, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def refresh_latest_store_file(conn: sqlite3.Connection) -> None:
+    ensure_local_store_dir()
+    latest_path = latest_store_path()
+    latest_date = latest_record_date(conn)
+    if not latest_date:
+        if latest_path.exists():
+            latest_path.unlink()
+        return
+
+    latest_bundle = build_local_record_bundle(conn, latest_date)
+    latest_path.write_text(
+        json.dumps(latest_bundle, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def read_local_record_bundle(record_date: str) -> dict[str, Any] | None:
+    record_path = local_record_store_path(record_date)
+    if not record_path.exists():
+        return None
+    return json.loads(record_path.read_text(encoding="utf-8"))
+
+
 def auto_sync_loop() -> None:
     settings = sync_settings()
     if not settings["autoSyncEnabled"]:
@@ -1650,6 +1766,50 @@ class FitnessRequestHandler(SimpleHTTPRequestHandler):
                         query.get("date", [date.today().isoformat()])[0]
                     )
                     self.send_json({"ok": True, "data": build_share_context(conn, selected_date)})
+                    return
+
+                if method == "GET" and path == "/api/local/store":
+                    self.require_admin_auth()
+                    selected_date = parse_iso_date(
+                        query.get("date", [date.today().isoformat()])[0]
+                    )
+                    refresh_file = query.get("refresh", ["0"])[0] in {"1", "true", "yes"}
+                    bundle = read_local_record_bundle(selected_date)
+                    if bundle is None or refresh_file:
+                        write_local_record_bundle(conn, selected_date)
+                        bundle = read_local_record_bundle(selected_date)
+                    self.send_json(
+                        {
+                            "ok": True,
+                            "data": {
+                                "date": selected_date,
+                                "path": str(local_record_store_path(selected_date)),
+                                "bundle": bundle,
+                            },
+                        }
+                    )
+                    return
+
+                if method == "GET" and path == "/api/local/store/latest":
+                    self.require_admin_auth()
+                    refresh_file = query.get("refresh", ["0"])[0] in {"1", "true", "yes"}
+                    if refresh_file:
+                        refresh_latest_store_file(conn)
+                    latest_date = latest_record_date(conn)
+                    latest_bundle = None
+                    latest_path = latest_store_path()
+                    if latest_path.exists():
+                        latest_bundle = json.loads(latest_path.read_text(encoding="utf-8"))
+                    self.send_json(
+                        {
+                            "ok": True,
+                            "data": {
+                                "date": latest_date,
+                                "path": str(latest_path),
+                                "bundle": latest_bundle,
+                            },
+                        }
+                    )
                     return
 
                 if method == "GET" and path == "/api/admin/git/status":

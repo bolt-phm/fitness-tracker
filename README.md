@@ -129,3 +129,26 @@ This endpoint is designed for safe external reading of:
 - profile summary
 - recent stats
 - AI export text and payload
+
+## Local Daily Store (Auto Snapshot)
+
+To reduce repeated context and make URL reuse easier, the server now auto-generates local JSON snapshots whenever a daily record is saved:
+
+- `daily_store/YYYY-MM-DD.json`
+- `daily_store/latest.json`
+
+Each file includes:
+
+- the normalized daily `record`
+- recent 7-day stats summary
+- exchange payload template for next-day planning
+- reusable share URL templates (`datedUrlTemplate` and `latestUrlTemplate`)
+
+Optional env var:
+
+- `FITNESS_PUBLIC_BASE_URL` (for example: `http://xiao.uno:8085`)
+
+Admin API (requires `Authorization: Bearer <FITNESS_ADMIN_TOKEN>`):
+
+- `GET /api/local/store?date=YYYY-MM-DD`
+- `GET /api/local/store/latest`

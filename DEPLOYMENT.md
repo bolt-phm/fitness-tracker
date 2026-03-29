@@ -78,6 +78,28 @@ This endpoint is read-only and returns:
 
 If you want an assistant to read your latest data, share this URL rather than exposing write or admin endpoints.
 
+## Local Daily Snapshot Store
+
+Every successful daily record save will auto-write local JSON snapshots:
+
+- `daily_store/YYYY-MM-DD.json`
+- `daily_store/latest.json`
+
+These files are useful for low-context handoff and prompt reuse.  
+If you want URL templates inside snapshots to contain your public base URL prefix, set:
+
+```text
+FITNESS_PUBLIC_BASE_URL=http://xiao.uno:8085
+```
+
+Admin read APIs:
+
+```text
+GET /api/local/store?date=YYYY-MM-DD
+GET /api/local/store/latest
+Authorization: Bearer <FITNESS_ADMIN_TOKEN>
+```
+
 ## Update Safety Rules
 
 The server auto-update logic is intentionally conservative:
