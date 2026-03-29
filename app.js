@@ -1091,6 +1091,12 @@ function renderSummaryCards() {
         ["总额外消耗", formatMetric(summary.totalExtraBurnCalories, "kcal")],
         ["总训练时长", formatMetric(summary.totalExerciseMinutes, "分钟")],
     ];
+    cards.splice(
+        3,
+        0,
+        ["平均体脂率", formatMetric(summary.averageBodyFatPct, "%")],
+        ["体脂率变化", formatSignedMetric(summary.bodyFatChange, "%")]
+    );
 
     element("stats-summary").innerHTML = cards
         .map(

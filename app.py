@@ -1042,6 +1042,7 @@ def fetch_stats(conn: sqlite3.Connection, start_date: str, end_date: str) -> dic
 
     series = []
     weights = []
+    body_fat_values = []
     total_intake = 0
     total_extra_burn = 0
     total_exercise_minutes = 0.0
@@ -1054,11 +1055,14 @@ def fetch_stats(conn: sqlite3.Connection, start_date: str, end_date: str) -> dic
         exercise_minutes = as_float(row["exercise_minutes"]) or 0.0
         exercise_calories = as_float(row["exercise_calories"]) or 0.0
         session_count = row["session_count"] or 0
+        body_fat_pct = as_float(row["body_fat_pct"])
         net_calories = None
         if intake_calories is not None:
             net_calories = intake_calories - (extra_burn or 0) - round(exercise_calories)
         if weight is not None:
             weights.append(weight)
+        if body_fat_pct is not None:
+            body_fat_values.append(body_fat_pct)
         total_intake += intake_calories or 0
         total_extra_burn += extra_burn or 0
         total_exercise_minutes += exercise_minutes
@@ -1074,7 +1078,7 @@ def fetch_stats(conn: sqlite3.Connection, start_date: str, end_date: str) -> dic
                 "sleepHours": as_float(row["sleep_hours"]),
                 "hydrationMl": row["hydration_ml"],
                 "scaleBmi": as_float(row["scale_bmi"]),
-                "bodyFatPct": as_float(row["body_fat_pct"]),
+                "bodyFatPct": body_fat_pct,
                 "muscleRatePct": as_float(row["muscle_rate_pct"]),
                 "skeletalMuscleKg": as_float(row["skeletal_muscle_kg"]),
                 "visceralFatLevel": as_float(row["visceral_fat_level"]),
@@ -1106,6 +1110,8 @@ def fetch_stats(conn: sqlite3.Connection, start_date: str, end_date: str) -> dic
         "daysLogged": len(series),
         "averageWeight": round(sum(weights) / len(weights), 2) if weights else None,
         "weightChange": round(weights[-1] - weights[0], 2) if len(weights) >= 2 else None,
+        "averageBodyFatPct": round(sum(body_fat_values) / len(body_fat_values), 2) if body_fat_values else None,
+        "bodyFatChange": round(body_fat_values[-1] - body_fat_values[0], 2) if len(body_fat_values) >= 2 else None,
         "totalIntakeCalories": total_intake,
         "totalExtraBurnCalories": total_extra_burn,
         "totalExerciseMinutes": round(total_exercise_minutes, 1),
