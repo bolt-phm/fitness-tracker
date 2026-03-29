@@ -8,6 +8,11 @@ const metricLabels = {
     stepCount: "步数",
     sleepHours: "睡眠时长",
     hydrationMl: "饮水量",
+    scaleBmi: "体脂秤BMI",
+    bodyFatPct: "体脂率",
+    muscleRatePct: "肌肉率",
+    skeletalMuscleKg: "骨骼肌量",
+    visceralFatLevel: "内脏脂肪等级",
     netCalories: "净热量",
 };
 
@@ -64,6 +69,29 @@ function createEmptyRecord(dateValue) {
         stepCount: null,
         sleepHours: null,
         hydrationMl: null,
+        bodyScore: null,
+        scaleBmi: null,
+        bodyFatPct: null,
+        fatMassKg: null,
+        muscleRatePct: null,
+        muscleMassKg: null,
+        skeletalMuscleKg: null,
+        bodyWaterPct: null,
+        bodyWaterKg: null,
+        proteinPct: null,
+        proteinKg: null,
+        visceralFatLevel: null,
+        bmrKcal: null,
+        waistHipRatio: null,
+        bodyAge: null,
+        fatFreeMassKg: null,
+        boneSaltKg: null,
+        boneSaltPct: null,
+        heartRateBpm: null,
+        boneMuscleIndex: null,
+        recommendedCalories: null,
+        bodyType: "",
+        bodyShape: "",
         note: "",
         meals: {
             breakfast: { planText: "", actualText: "", calories: null },
@@ -366,6 +394,29 @@ function renderRecord() {
     element("record-steps").value = record.stepCount ?? "";
     element("record-sleep").value = record.sleepHours ?? "";
     element("record-water").value = record.hydrationMl ?? "";
+    element("record-body-score").value = record.bodyScore ?? "";
+    element("record-scale-bmi").value = record.scaleBmi ?? "";
+    element("record-body-fat").value = record.bodyFatPct ?? "";
+    element("record-fat-mass").value = record.fatMassKg ?? "";
+    element("record-muscle-rate").value = record.muscleRatePct ?? "";
+    element("record-muscle-mass").value = record.muscleMassKg ?? "";
+    element("record-skeletal-muscle").value = record.skeletalMuscleKg ?? "";
+    element("record-water-percent").value = record.bodyWaterPct ?? "";
+    element("record-water-mass").value = record.bodyWaterKg ?? "";
+    element("record-protein-percent").value = record.proteinPct ?? "";
+    element("record-protein-mass").value = record.proteinKg ?? "";
+    element("record-visceral-fat").value = record.visceralFatLevel ?? "";
+    element("record-bmr").value = record.bmrKcal ?? "";
+    element("record-whr").value = record.waistHipRatio ?? "";
+    element("record-body-age").value = record.bodyAge ?? "";
+    element("record-fat-free-mass").value = record.fatFreeMassKg ?? "";
+    element("record-bone-salt-mass").value = record.boneSaltKg ?? "";
+    element("record-bone-salt-percent").value = record.boneSaltPct ?? "";
+    element("record-heart-rate").value = record.heartRateBpm ?? "";
+    element("record-bone-muscle-index").value = record.boneMuscleIndex ?? "";
+    element("record-recommended-calories").value = record.recommendedCalories ?? "";
+    element("record-body-type").value = record.bodyType ?? "";
+    element("record-body-shape").value = record.bodyShape ?? "";
     element("record-note").value = safeText(record.note);
 
     const breakfast = record.meals?.breakfast || {};
@@ -401,6 +452,29 @@ function gatherRecordFromForm() {
         stepCount: toNumber(element("record-steps").value),
         sleepHours: toNumber(element("record-sleep").value),
         hydrationMl: toNumber(element("record-water").value),
+        bodyScore: toNumber(element("record-body-score").value),
+        scaleBmi: toNumber(element("record-scale-bmi").value),
+        bodyFatPct: toNumber(element("record-body-fat").value),
+        fatMassKg: toNumber(element("record-fat-mass").value),
+        muscleRatePct: toNumber(element("record-muscle-rate").value),
+        muscleMassKg: toNumber(element("record-muscle-mass").value),
+        skeletalMuscleKg: toNumber(element("record-skeletal-muscle").value),
+        bodyWaterPct: toNumber(element("record-water-percent").value),
+        bodyWaterKg: toNumber(element("record-water-mass").value),
+        proteinPct: toNumber(element("record-protein-percent").value),
+        proteinKg: toNumber(element("record-protein-mass").value),
+        visceralFatLevel: toNumber(element("record-visceral-fat").value),
+        bmrKcal: toNumber(element("record-bmr").value),
+        waistHipRatio: toNumber(element("record-whr").value),
+        bodyAge: toNumber(element("record-body-age").value),
+        fatFreeMassKg: toNumber(element("record-fat-free-mass").value),
+        boneSaltKg: toNumber(element("record-bone-salt-mass").value),
+        boneSaltPct: toNumber(element("record-bone-salt-percent").value),
+        heartRateBpm: toNumber(element("record-heart-rate").value),
+        boneMuscleIndex: toNumber(element("record-bone-muscle-index").value),
+        recommendedCalories: toNumber(element("record-recommended-calories").value),
+        bodyType: safeText(element("record-body-type").value),
+        bodyShape: safeText(element("record-body-shape").value),
         note: safeText(element("record-note").value),
         meals: {
             breakfast: {

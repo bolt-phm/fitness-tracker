@@ -30,6 +30,36 @@ TRACKER_BEGIN = f"{TRACKER_VERSION}_BEGIN"
 TRACKER_END = f"{TRACKER_VERSION}_END"
 GIT_SYNC_DEFAULT_REMOTE = "origin"
 
+BODY_COMP_REAL_FIELDS: dict[str, str] = {
+    "scaleBmi": "scale_bmi",
+    "bodyFatPct": "body_fat_pct",
+    "fatMassKg": "fat_mass_kg",
+    "muscleRatePct": "muscle_rate_pct",
+    "muscleMassKg": "muscle_mass_kg",
+    "skeletalMuscleKg": "skeletal_muscle_kg",
+    "bodyWaterPct": "body_water_pct",
+    "bodyWaterKg": "body_water_kg",
+    "proteinPct": "protein_pct",
+    "proteinKg": "protein_kg",
+    "visceralFatLevel": "visceral_fat_level",
+    "waistHipRatio": "waist_hip_ratio",
+    "fatFreeMassKg": "fat_free_mass_kg",
+    "boneSaltKg": "bone_salt_kg",
+    "boneSaltPct": "bone_salt_pct",
+    "boneMuscleIndex": "bone_muscle_index",
+}
+BODY_COMP_INT_FIELDS: dict[str, str] = {
+    "bodyScore": "body_score",
+    "bmrKcal": "bmr_kcal",
+    "bodyAge": "body_age",
+    "heartRateBpm": "heart_rate_bpm",
+    "recommendedCalories": "recommended_calories",
+}
+BODY_COMP_TEXT_FIELDS: dict[str, str] = {
+    "bodyType": "body_type",
+    "bodyShape": "body_shape",
+}
+
 DEFAULT_PROFILE = {
     "heightM": 1.71,
     "startWeight": 84.0,
@@ -126,6 +156,42 @@ def get_connection() -> sqlite3.Connection:
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     return connection
+
+
+def ensure_daily_record_columns(conn: sqlite3.Connection) -> None:
+    existing_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(daily_records)").fetchall()
+    }
+    desired_columns = {
+        "body_score": "INTEGER",
+        "scale_bmi": "REAL",
+        "body_fat_pct": "REAL",
+        "fat_mass_kg": "REAL",
+        "muscle_rate_pct": "REAL",
+        "muscle_mass_kg": "REAL",
+        "skeletal_muscle_kg": "REAL",
+        "body_water_pct": "REAL",
+        "body_water_kg": "REAL",
+        "protein_pct": "REAL",
+        "protein_kg": "REAL",
+        "visceral_fat_level": "REAL",
+        "bmr_kcal": "INTEGER",
+        "waist_hip_ratio": "REAL",
+        "body_age": "INTEGER",
+        "fat_free_mass_kg": "REAL",
+        "bone_salt_kg": "REAL",
+        "bone_salt_pct": "REAL",
+        "heart_rate_bpm": "INTEGER",
+        "bone_muscle_index": "REAL",
+        "recommended_calories": "INTEGER",
+        "body_type": "TEXT DEFAULT ''",
+        "body_shape": "TEXT DEFAULT ''",
+    }
+    for column_name, column_type in desired_columns.items():
+        if column_name not in existing_columns:
+            conn.execute(
+                f"ALTER TABLE daily_records ADD COLUMN {column_name} {column_type}"
+            )
 
 
 class AuthError(Exception):
@@ -386,6 +452,7 @@ def initialize_database() -> None:
             );
             """
         )
+        ensure_daily_record_columns(conn)
 
         if conn.execute("SELECT 1 FROM profile WHERE id = 1").fetchone() is None:
             conn.execute(
@@ -491,6 +558,29 @@ def empty_record(record_date: str) -> dict[str, Any]:
         "stepCount": None,
         "sleepHours": None,
         "hydrationMl": None,
+        "bodyScore": None,
+        "scaleBmi": None,
+        "bodyFatPct": None,
+        "fatMassKg": None,
+        "muscleRatePct": None,
+        "muscleMassKg": None,
+        "skeletalMuscleKg": None,
+        "bodyWaterPct": None,
+        "bodyWaterKg": None,
+        "proteinPct": None,
+        "proteinKg": None,
+        "visceralFatLevel": None,
+        "bmrKcal": None,
+        "waistHipRatio": None,
+        "bodyAge": None,
+        "fatFreeMassKg": None,
+        "boneSaltKg": None,
+        "boneSaltPct": None,
+        "heartRateBpm": None,
+        "boneMuscleIndex": None,
+        "recommendedCalories": None,
+        "bodyType": "",
+        "bodyShape": "",
         "note": "",
         "meals": {
             meal_type: {"planText": "", "actualText": "", "calories": None}
@@ -556,6 +646,29 @@ def fetch_record(conn: sqlite3.Connection, record_date: str) -> dict[str, Any]:
         "stepCount": row["step_count"],
         "sleepHours": as_float(row["sleep_hours"]),
         "hydrationMl": row["hydration_ml"],
+        "bodyScore": row["body_score"],
+        "scaleBmi": as_float(row["scale_bmi"]),
+        "bodyFatPct": as_float(row["body_fat_pct"]),
+        "fatMassKg": as_float(row["fat_mass_kg"]),
+        "muscleRatePct": as_float(row["muscle_rate_pct"]),
+        "muscleMassKg": as_float(row["muscle_mass_kg"]),
+        "skeletalMuscleKg": as_float(row["skeletal_muscle_kg"]),
+        "bodyWaterPct": as_float(row["body_water_pct"]),
+        "bodyWaterKg": as_float(row["body_water_kg"]),
+        "proteinPct": as_float(row["protein_pct"]),
+        "proteinKg": as_float(row["protein_kg"]),
+        "visceralFatLevel": as_float(row["visceral_fat_level"]),
+        "bmrKcal": row["bmr_kcal"],
+        "waistHipRatio": as_float(row["waist_hip_ratio"]),
+        "bodyAge": row["body_age"],
+        "fatFreeMassKg": as_float(row["fat_free_mass_kg"]),
+        "boneSaltKg": as_float(row["bone_salt_kg"]),
+        "boneSaltPct": as_float(row["bone_salt_pct"]),
+        "heartRateBpm": row["heart_rate_bpm"],
+        "boneMuscleIndex": as_float(row["bone_muscle_index"]),
+        "recommendedCalories": row["recommended_calories"],
+        "bodyType": row["body_type"] or "",
+        "bodyShape": row["body_shape"] or "",
         "note": row["note"] or "",
         "meals": empty_record(record_date)["meals"],
         "exerciseEntries": [],
@@ -741,8 +854,13 @@ def save_record(conn: sqlite3.Connection, record_date: str, payload: dict[str, A
         """
         INSERT INTO daily_records (
             record_date, weight_kg, intake_calories, extra_burn_calories, step_count,
-            sleep_hours, hydration_ml, note, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            sleep_hours, hydration_ml, note,
+            body_score, scale_bmi, body_fat_pct, fat_mass_kg, muscle_rate_pct, muscle_mass_kg,
+            skeletal_muscle_kg, body_water_pct, body_water_kg, protein_pct, protein_kg,
+            visceral_fat_level, bmr_kcal, waist_hip_ratio, body_age, fat_free_mass_kg,
+            bone_salt_kg, bone_salt_pct, heart_rate_bpm, bone_muscle_index, recommended_calories,
+            body_type, body_shape, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(record_date) DO UPDATE SET
             weight_kg = excluded.weight_kg,
             intake_calories = excluded.intake_calories,
@@ -751,6 +869,29 @@ def save_record(conn: sqlite3.Connection, record_date: str, payload: dict[str, A
             sleep_hours = excluded.sleep_hours,
             hydration_ml = excluded.hydration_ml,
             note = excluded.note,
+            body_score = excluded.body_score,
+            scale_bmi = excluded.scale_bmi,
+            body_fat_pct = excluded.body_fat_pct,
+            fat_mass_kg = excluded.fat_mass_kg,
+            muscle_rate_pct = excluded.muscle_rate_pct,
+            muscle_mass_kg = excluded.muscle_mass_kg,
+            skeletal_muscle_kg = excluded.skeletal_muscle_kg,
+            body_water_pct = excluded.body_water_pct,
+            body_water_kg = excluded.body_water_kg,
+            protein_pct = excluded.protein_pct,
+            protein_kg = excluded.protein_kg,
+            visceral_fat_level = excluded.visceral_fat_level,
+            bmr_kcal = excluded.bmr_kcal,
+            waist_hip_ratio = excluded.waist_hip_ratio,
+            body_age = excluded.body_age,
+            fat_free_mass_kg = excluded.fat_free_mass_kg,
+            bone_salt_kg = excluded.bone_salt_kg,
+            bone_salt_pct = excluded.bone_salt_pct,
+            heart_rate_bpm = excluded.heart_rate_bpm,
+            bone_muscle_index = excluded.bone_muscle_index,
+            recommended_calories = excluded.recommended_calories,
+            body_type = excluded.body_type,
+            body_shape = excluded.body_shape,
             updated_at = excluded.updated_at
         """,
         (
@@ -762,6 +903,29 @@ def save_record(conn: sqlite3.Connection, record_date: str, payload: dict[str, A
             as_float(payload.get("sleepHours")),
             as_int(payload.get("hydrationMl")),
             as_text(payload.get("note")),
+            as_int(payload.get("bodyScore")),
+            as_float(payload.get("scaleBmi")),
+            as_float(payload.get("bodyFatPct")),
+            as_float(payload.get("fatMassKg")),
+            as_float(payload.get("muscleRatePct")),
+            as_float(payload.get("muscleMassKg")),
+            as_float(payload.get("skeletalMuscleKg")),
+            as_float(payload.get("bodyWaterPct")),
+            as_float(payload.get("bodyWaterKg")),
+            as_float(payload.get("proteinPct")),
+            as_float(payload.get("proteinKg")),
+            as_float(payload.get("visceralFatLevel")),
+            as_int(payload.get("bmrKcal")),
+            as_float(payload.get("waistHipRatio")),
+            as_int(payload.get("bodyAge")),
+            as_float(payload.get("fatFreeMassKg")),
+            as_float(payload.get("boneSaltKg")),
+            as_float(payload.get("boneSaltPct")),
+            as_int(payload.get("heartRateBpm")),
+            as_float(payload.get("boneMuscleIndex")),
+            as_int(payload.get("recommendedCalories")),
+            as_text(payload.get("bodyType")),
+            as_text(payload.get("bodyShape")),
             now,
             now,
         ),
@@ -858,6 +1022,11 @@ def fetch_stats(conn: sqlite3.Connection, start_date: str, end_date: str) -> dic
                dr.step_count,
                dr.sleep_hours,
                dr.hydration_ml,
+               dr.scale_bmi,
+               dr.body_fat_pct,
+               dr.muscle_rate_pct,
+               dr.skeletal_muscle_kg,
+               dr.visceral_fat_level,
                dr.note,
                COALESCE(SUM(ee.duration_minutes), 0) AS exercise_minutes,
                COALESCE(SUM(ee.calories_burned), 0) AS exercise_calories,
@@ -904,6 +1073,11 @@ def fetch_stats(conn: sqlite3.Connection, start_date: str, end_date: str) -> dic
                 "stepCount": row["step_count"],
                 "sleepHours": as_float(row["sleep_hours"]),
                 "hydrationMl": row["hydration_ml"],
+                "scaleBmi": as_float(row["scale_bmi"]),
+                "bodyFatPct": as_float(row["body_fat_pct"]),
+                "muscleRatePct": as_float(row["muscle_rate_pct"]),
+                "skeletalMuscleKg": as_float(row["skeletal_muscle_kg"]),
+                "visceralFatLevel": as_float(row["visceral_fat_level"]),
                 "note": row["note"] or "",
                 "exerciseMinutes": exercise_minutes,
                 "exerciseCalories": exercise_calories,
@@ -971,6 +1145,29 @@ def coerce_record_payload(payload: dict[str, Any], fallback_date: str | None = N
     record["stepCount"] = as_int(payload.get("stepCount", payload.get("steps")))
     record["sleepHours"] = as_float(payload.get("sleepHours", payload.get("sleep")))
     record["hydrationMl"] = as_int(payload.get("hydrationMl", payload.get("waterMl", payload.get("hydration"))))
+    record["bodyScore"] = as_int(payload.get("bodyScore", payload.get("score")))
+    record["scaleBmi"] = as_float(payload.get("scaleBmi", payload.get("bmi")))
+    record["bodyFatPct"] = as_float(payload.get("bodyFatPct", payload.get("bodyFatRate", payload.get("fatRate"))))
+    record["fatMassKg"] = as_float(payload.get("fatMassKg", payload.get("bodyFatMass")))
+    record["muscleRatePct"] = as_float(payload.get("muscleRatePct", payload.get("muscleRate")))
+    record["muscleMassKg"] = as_float(payload.get("muscleMassKg", payload.get("muscleMass")))
+    record["skeletalMuscleKg"] = as_float(payload.get("skeletalMuscleKg", payload.get("skeletalMuscleMass")))
+    record["bodyWaterPct"] = as_float(payload.get("bodyWaterPct", payload.get("waterRate")))
+    record["bodyWaterKg"] = as_float(payload.get("bodyWaterKg", payload.get("waterMass")))
+    record["proteinPct"] = as_float(payload.get("proteinPct", payload.get("proteinRate")))
+    record["proteinKg"] = as_float(payload.get("proteinKg", payload.get("proteinMass")))
+    record["visceralFatLevel"] = as_float(payload.get("visceralFatLevel", payload.get("visceralFat")))
+    record["bmrKcal"] = as_int(payload.get("bmrKcal", payload.get("bmr", payload.get("baseMetabolism"))))
+    record["waistHipRatio"] = as_float(payload.get("waistHipRatio", payload.get("whr")))
+    record["bodyAge"] = as_int(payload.get("bodyAge", payload.get("metabolicAge")))
+    record["fatFreeMassKg"] = as_float(payload.get("fatFreeMassKg", payload.get("ffm")))
+    record["boneSaltKg"] = as_float(payload.get("boneSaltKg", payload.get("boneMass")))
+    record["boneSaltPct"] = as_float(payload.get("boneSaltPct", payload.get("boneRate")))
+    record["heartRateBpm"] = as_int(payload.get("heartRateBpm", payload.get("heartRate")))
+    record["boneMuscleIndex"] = as_float(payload.get("boneMuscleIndex"))
+    record["recommendedCalories"] = as_int(payload.get("recommendedCalories", payload.get("recommendedCalorieIntake")))
+    record["bodyType"] = as_text(payload.get("bodyType"))
+    record["bodyShape"] = as_text(payload.get("bodyShape"))
     record["note"] = as_text(payload.get("note"))
 
     meals = payload.get("meals", {})
@@ -1115,21 +1312,7 @@ def build_exchange_payload(conn: sqlite3.Connection, record_payload: dict[str, A
         "responseTemplate": {
             "version": TRACKER_VERSION,
             "kind": "next_day_plan",
-            "record": {
-                "date": next_date,
-                "weightKg": None,
-                "intakeCalories": None,
-                "extraBurnCalories": None,
-                "stepCount": None,
-                "sleepHours": None,
-                "hydrationMl": None,
-                "note": "",
-                "meals": {
-                    meal_type: {"planText": "", "actualText": "", "calories": None}
-                    for meal_type in MEAL_TYPES
-                },
-                "exerciseEntries": [],
-            },
+            "record": empty_record(next_date),
         },
     }
 

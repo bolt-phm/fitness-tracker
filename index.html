@@ -187,6 +187,98 @@
                                         <span>饮水量 (ml)</span>
                                         <input id="record-water" type="number" min="0" step="50">
                                     </label>
+                                    <label>
+                                        <span>体脂秤得分</span>
+                                        <input id="record-body-score" type="number" min="0" step="1">
+                                    </label>
+                                    <label>
+                                        <span>体脂秤 BMI</span>
+                                        <input id="record-scale-bmi" type="number" min="0" step="0.1">
+                                    </label>
+                                    <label>
+                                        <span>体脂率 (%)</span>
+                                        <input id="record-body-fat" type="number" min="0" step="0.1">
+                                    </label>
+                                    <label>
+                                        <span>脂肪量 (kg)</span>
+                                        <input id="record-fat-mass" type="number" min="0" step="0.1">
+                                    </label>
+                                    <label>
+                                        <span>肌肉率 (%)</span>
+                                        <input id="record-muscle-rate" type="number" min="0" step="0.1">
+                                    </label>
+                                    <label>
+                                        <span>肌肉量 (kg)</span>
+                                        <input id="record-muscle-mass" type="number" min="0" step="0.1">
+                                    </label>
+                                    <label>
+                                        <span>骨骼肌量 (kg)</span>
+                                        <input id="record-skeletal-muscle" type="number" min="0" step="0.1">
+                                    </label>
+                                    <label>
+                                        <span>身体水分 (%)</span>
+                                        <input id="record-water-percent" type="number" min="0" step="0.1">
+                                    </label>
+                                    <label>
+                                        <span>体水分量 (kg)</span>
+                                        <input id="record-water-mass" type="number" min="0" step="0.1">
+                                    </label>
+                                    <label>
+                                        <span>蛋白质率 (%)</span>
+                                        <input id="record-protein-percent" type="number" min="0" step="0.1">
+                                    </label>
+                                    <label>
+                                        <span>蛋白质量 (kg)</span>
+                                        <input id="record-protein-mass" type="number" min="0" step="0.1">
+                                    </label>
+                                    <label>
+                                        <span>内脏脂肪等级</span>
+                                        <input id="record-visceral-fat" type="number" min="0" step="0.1">
+                                    </label>
+                                    <label>
+                                        <span>基础代谢率 (kcal)</span>
+                                        <input id="record-bmr" type="number" min="0" step="1">
+                                    </label>
+                                    <label>
+                                        <span>腰臀比</span>
+                                        <input id="record-whr" type="number" min="0" step="0.01">
+                                    </label>
+                                    <label>
+                                        <span>身体年龄</span>
+                                        <input id="record-body-age" type="number" min="0" step="1">
+                                    </label>
+                                    <label>
+                                        <span>去脂体重 (kg)</span>
+                                        <input id="record-fat-free-mass" type="number" min="0" step="0.1">
+                                    </label>
+                                    <label>
+                                        <span>骨盐量 (kg)</span>
+                                        <input id="record-bone-salt-mass" type="number" min="0" step="0.1">
+                                    </label>
+                                    <label>
+                                        <span>骨盐率 (%)</span>
+                                        <input id="record-bone-salt-percent" type="number" min="0" step="0.1">
+                                    </label>
+                                    <label>
+                                        <span>心率 (次/分)</span>
+                                        <input id="record-heart-rate" type="number" min="0" step="1">
+                                    </label>
+                                    <label>
+                                        <span>骨骼肌指数</span>
+                                        <input id="record-bone-muscle-index" type="number" min="0" step="0.1">
+                                    </label>
+                                    <label>
+                                        <span>建议热量摄入 (kcal)</span>
+                                        <input id="record-recommended-calories" type="number" min="0" step="1">
+                                    </label>
+                                    <label>
+                                        <span>身体类型</span>
+                                        <input id="record-body-type" type="text" placeholder="例如：肥胖">
+                                    </label>
+                                    <label>
+                                        <span>体型/身材</span>
+                                        <input id="record-body-shape" type="text" placeholder="例如：倒三角型">
+                                    </label>
                                     <label class="full-span">
                                         <span>当天备注</span>
                                         <textarea id="record-note" rows="4" placeholder="例如：晚课到 22:30，今天训练挪到晚上；如果去不了健身房，只做 45 分钟快走。"></textarea>
@@ -360,6 +452,11 @@
                                 <option value="stepCount">步数</option>
                                 <option value="sleepHours">睡眠时长</option>
                                 <option value="hydrationMl">饮水量</option>
+                                <option value="scaleBmi">体脂秤BMI</option>
+                                <option value="bodyFatPct">体脂率</option>
+                                <option value="muscleRatePct">肌肉率</option>
+                                <option value="skeletalMuscleKg">骨骼肌量</option>
+                                <option value="visceralFatLevel">内脏脂肪等级</option>
                                 <option value="netCalories">净热量</option>
                             </select>
                         </label>
